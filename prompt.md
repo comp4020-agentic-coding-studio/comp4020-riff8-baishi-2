@@ -112,6 +112,90 @@ erasing, see `CLAUDE.md`); first-come queueing ("you're next, wait").
   hunting for it, a drag in the strip draws rather than scrolls, and a
   horizontal swipe outside it still scrolls.
 
+## Page design: a mounted handscroll, unrolled on a table
+
+At the moment the page is a beige box with a heading over it. It should
+look like the thing the README describes: an East Asian ink handscroll
+(think a Song-dynasty landscape scroll, unrolled right to left as it
+grows), mounted on dark silk and laid on a table. The scroll is the only
+object that matters on the page, and everything else steps back from it.
+
+**Palette.** Five colours, defined as tokens on `:root` in
+`src/styles/global.css` and used everywhere. No other colours. These
+contrast ratios have been checked:
+
+| token          | value                    | role |
+|----------------|--------------------------|------|
+| `--mount`      | `#1e2a31` deep indigo silk | page background, the silk mounting around the scroll |
+| `--paper`      | `#f3ecdf` warm xuan paper  | the scroll itself |
+| `--ink`        | `#1d1b19` sumi black       | dry marks (14.6:1 on paper) |
+| `--wet`        | `#5b6b78` blue-grey        | wet ink still being drawn, at reduced opacity (fresh sumi reads slightly blue) |
+| `--seal`       | `#b5332a` cinnabar red     | the one accent: the seal stamp, focus rings, the draw-here prompt (5.2:1 on paper) |
+
+Text on the mount is `#e8e1d3` (11.3:1), with `#a9b4ad` for secondary text
+(6.9:1). Cinnabar on the mount only reaches 4.4:1, so use it there only
+for large or non-text things. Red is **rare on purpose**: if more than
+one or two things on screen are red, it has stopped meaning anything. The
+existing brown `--accent`/`--link` go away.
+
+**One theme, not two.** The page is already dark silk around light paper,
+so drop the separate light/dark switch. Under
+`prefers-color-scheme: dark`, dim the paper slightly (around `#e4dccd`) so
+it doesn't glare at night. Never invert it to dark paper with light ink:
+ink is black.
+
+**The objects.**
+- *The scroll* runs the full width of the viewport, edge to edge, not
+  inside a 60rem column. On desktop it's as tall as fits comfortably (the
+  SVG viewBox can scale, and coordinates stay as they are). A soft drop
+  shadow lifts it off the silk.
+- *Paper grain* comes from one SVG `feTurbulence` filter laid over the
+  paper at low opacity. No image files.
+- *A wooden roller* sits at the right-hand end, just past the blank strip.
+  It's a plain rounded bar in a dark wood brown, with the next paper
+  "unrolling" from it. It's where new paper comes from, so when a strip is
+  saved and the scroll grows, the roller slides right with a short ease.
+  The left end gets a thin silk border with a title slip, as on a real
+  scroll.
+- *The seal.* When your own mark dries, a small square cinnabar seal
+  stamps down in the corner of your strip, showing your mark's number
+  (e.g. "六十八" or just "68"; pick one and keep it). It's drawn by the
+  client, on your page only, and never saved. It's how the page says
+  "this one is yours" without accounts. Other people's marks get no seal.
+- *Wet ink*: `--wet` at about 60% opacity, with no halo, and the stroke
+  edge slightly soft (a light blur filter is fine). Drying is a transition
+  from `--wet` to `--ink`, with the halo fading in. A claimed but empty
+  strip gets a very faint `--wet` wash.
+- *The draw-here strip*: drop the dashed box. Use a slightly brighter
+  patch of paper with the prompt in italic cinnabar, as if it were an
+  invitation brushed onto the paper.
+
+**Type.** Keep the existing system serif stack (Iowan / Palatino /
+Georgia): no web fonts, no extra requests. Set the title in small caps
+with generous letter-spacing, the way a colophon is set. Header and status
+text are quiet: secondary colour, small size, set on the mount *beneath*
+the scroll like a museum label ("67 marks, since 29 September 2026. Two
+people are drawing now." The second sentence can come from claims; that's
+not a presence counter, just the label noticing wet ink). The link to
+`/readme/` lives in that label. Give `/readme/` the same treatment: paper
+column on the silk mount, comfortable measure (~65ch), the same palette.
+
+**Motion.** Slow and few: ink drying (~400ms), the roller sliding (~300ms),
+the seal stamping (a quick scale from 1.15 to 1 with a slight rotation,
+~150ms). Nothing loops or bounces, and nothing animates while idle. Under
+`prefers-reduced-motion`, everything snaps straight to its end state.
+
+**What to avoid.** Gradients on UI, rounded "card" chrome, emoji, icon
+fonts, toasts that slide in, and anything that looks like a SaaS
+dashboard. Don't add a dark-ink-on-dark-paper mode. Don't decorate the
+scroll with pre-drawn mountains or motifs: the only ink on the paper is
+visitors' ink. Update `public/favicon.svg` to match (paper square, ink
+stroke, tiny seal).
+
+Check the finished page at 375px and 1440px wide, and keep any contrast
+you introduce at or above WCAG AA. `PROCESS.md` already notes that axe
+can't measure SVG text contrast, so measure that by hand.
+
 ## Tests (these gate the deploy)
 
 `spec/scroll.test.ts` should keep every promise it holds now (persistence,
