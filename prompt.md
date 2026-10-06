@@ -44,10 +44,10 @@ while it's still wet.**
   Enter/Space). Don't wait for the save. The server hands out the lowest
   strip nobody has saved into and nobody currently holds. Two people who
   start together get two neighbouring strips, so neither is ever refused
-  for being slow. A claim ends when its mark is saved, or after a short
-  timeout (somewhere around 30 to 60s, your call) if the drawer walks off.
-  An expired strip goes back into the pool, so the scroll gets no
-  permanent holes.
+  for being slow. A claim ends when its mark is published, or after a
+  stretch of inactivity (around 90s with no new stroke, your call) if the
+  drawer walks off. Each stroke resets the clock. An expired strip goes
+  back into the pool, so the scroll gets no permanent holes.
 - **The server enforces the claim.** A save is accepted only inside the
   strip that visitor claimed. The halo and bounds rules in
   `zoneBounds`/`strokes.ts` stay exactly as strict as they are now, just
@@ -59,19 +59,83 @@ while it's still wet.**
   it's one machine, and a claim lost on restart costs one in-progress mark.
   Say that cost in the ADR.
 - **Wet ink is the presence indicator.** While someone is drawing, everyone
-  else sees their stroke appear live in that person's strip, lighter and
-  softer, with no halo: ink that hasn't dried. When it's saved it
-  *dries*. It darkens into the normal ink with its soft halo, through a
+  else sees their strokes appear live in that person's strip, lighter and
+  softer, with no halo: ink that hasn't dried. When the mark is published,
+  all of its strokes *dry* together. It darkens into the normal ink with its soft halo, through a
   short transition (a few hundred ms; respect
   `prefers-reduced-motion`). A strip that's been claimed but not yet drawn
   in can show a faint "someone's here" wash. Those are the only signals of
   presence: no cursors, no avatars, no names, no "3 people online"
   counter. The README's case for small-on-purpose is why. Wet ink is
   never saved and never shown to a visitor who arrives after it's gone.
-- **Your own mark dries in place.** Drop `location.reload()`. After saving,
-  your stroke darkens where it is, the status line says something like
-  "yours is mark 68. It stays.", and your page closes for drawing (still
-  one mark per visit). The scroll keeps updating live around it.
+- **Your own mark dries in place.** Drop `location.reload()`. After
+  publishing, your strokes darken where they are, the status line says
+  something like "yours is mark 68. It stays.", and your page closes for
+  drawing (still one mark per visit). The scroll keeps updating live
+  around it.
+
+## Several strokes, then Publish
+
+Today a mark is one stroke: lift the brush and it's saved. Change that.
+**A mark is everything you paint in your strip, made final when you press
+Publish.** One visit still gets one mark, but a mark can now be a bamboo
+stalk, a character, or a small landscape, not just a single gesture.
+
+- **An eraser for wet ink, and only wet ink.** Until you publish, you can
+  lift any of **your own** strokes, like blotting wet ink off the paper
+  before it sets. The eraser is a tool in the tray beside the brushes.
+  With it selected, tapping or dragging over one of your wet strokes lifts
+  that **whole stroke**. Don't build a pixel eraser: a stroke is the unit
+  that gets stored and validated, and partial strokes would need masks the
+  server can't check. Add a "Lift last stroke" button next to it for
+  keyboard users and quick fixes. A lifted stroke disappears live from
+  everyone else's screen too, and erasing counts as activity for the
+  claim timeout.
+- **Once published, it's dry forever.** The eraser never touches a
+  published mark, yours or anyone's, and there's still no route that can.
+  It can't reach other people's wet strokes either, because it only knows
+  the strokes held under your own claim token. The line the app draws
+  moves from "every stroke is final" to "**the mark is final once it's
+  dry**", and Publish is now the moment of commitment. Rewrite the
+  README's "Nobody can undo it, including you" to say exactly that, and
+  put the trade-off in the ADR (an eraser makes drafting kinder, but the
+  scroll no longer records the hesitations). Keep the button label honest
+  about it: "Publish: no more erasing after this".
+- **The Publish button** is a real `<button>` in the tray. It's disabled
+  until there's at least one stroke, and its label says what it does, for
+  example "Publish: no more erasing after this". It goes disabled again if every stroke has been lifted. No confirmation dialog. Pressing it sends
+  every stroke in one request, the server writes them in one statement
+  (all or nothing), the whole mark dries, and the seal stamps. Stamping
+  the seal is the act of publishing, like a painter signing a finished
+  scroll.
+- **Until you publish, nothing is saved.** Your strokes are wet ink:
+  everyone sees them live, but they're held only in the server's memory
+  with your claim. If the claim lapses (about 90s with no new stroke), the
+  wet strokes fade from everyone's screen and the strip goes back into the
+  pool. Warn the drawer plainly about 15s before that happens ("your ink
+  dries in 15s unless you keep painting or publish"). Should a lapsed
+  draft be published automatically instead? No. Publishing is the
+  visitor's decision. Note the alternative in the ADR.
+- **A limit on strokes.** Up to 24 strokes per mark, each validated
+  exactly as a single stroke is today (grammar, width, bounds, per-brush
+  halo), with a total size cap on the request. The strip's bounds already
+  stop a mark spreading. The stroke cap stops one visitor holding a strip
+  forever with ten thousand dots.
+- **Brush and ink per stroke.** Change brush or ink freely *between*
+  strokes. Each stroke is locked to the brush and ink it started with.
+  Mixing ink tones in one mark is exactly what Chinese ink painting does.
+- **Keyboard.** A dot at the centre isn't enough once a mark can be
+  several strokes. When the strip has focus, arrow keys move a visible
+  brush-tip cursor around the strip (staying inside the bounds), and
+  Enter/Space leaves a dot there (or, with the eraser selected, lifts the wet stroke under the cursor). Tab reaches the tray, "Lift last stroke" and Publish. Tell
+  screen readers how many strokes are down and whether the mark is
+  published (`aria-live`).
+- **Storage.** Still one table, still one row per published mark, so "N
+  marks so far" keeps meaning visits. Store the mark's strokes, each with
+  its own `d`, width, brush and ink, in that row (a JSON column is fine).
+  Existing rows are one-stroke marks and render exactly as they do now.
+  The server-rendered `/` draws every stroke of every mark without
+  JavaScript.
 
 The alternatives the pod argued against, which the ADR should weigh
 honestly and say what our choice costs: keep the 409 and just push live
@@ -243,19 +307,18 @@ validation-test pattern from crit 8 should cover the widest one.
 brush rest: seven ink dots and four brush tips. Each group is a real radio
 group (`<fieldset>`, `<legend>`, labelled inputs, arrow keys move within a
 group), not hit-tested shapes. Show the current brush-and-ink as a tiny
-sample stroke. The choice can change freely until the brush touches down,
-and is locked from then on: **one mark is one brush and one ink.** That
-keeps the one-mark-per-visit rule intact, with no switching mid-stroke and
-no layering a second colour. Keyboard drawing (Enter/Space) uses the
-chosen brush and ink too. Without JavaScript the tray isn't shown at all,
+sample stroke. The choice can change between strokes but not during one
+(see "Several strokes, then Publish"). Keyboard dots use the chosen brush
+and ink too. The Publish button sits at the end of the tray. Without JavaScript the tray isn't shown at all,
 since there's nothing to draw with.
 
-**Data.** Add `brush` and `ink` columns to the existing `strokes` table,
-defaulting to `broad` / `jiao` so every existing mark renders exactly as
-it does today. The server accepts only ids from these two lists and
-rejects anything else with a 400. An absent field means the default. The
-claim, the wet-ink stream and the SSE "mark saved" event all carry brush
-and ink, so other viewers see the right wet colour while it's drawn. The
+**Data.** Brush and ink are stored per stroke inside the mark's row (see
+"Storage" above). Existing rows count as `broad` / `jiao`, so every
+existing mark renders exactly as it does today. The server accepts only
+ids from these two lists and rejects anything else with a 400. An absent
+field means the default. The wet-ink stream and the SSE "mark published"
+event carry brush and ink per stroke, so other viewers see the right wet
+colour while it's drawn. The
 server-rendered `/` draws each mark with its own brush and ink, with or
 without JavaScript.
 
@@ -277,7 +340,18 @@ claims where needed. Add specs that would have failed before this work:
   given brush and ink comes back with them on a fresh `GET /` (no JS), and
   a mark with no brush or ink is saved as `broad` / `jiao`;
 - a `wash` (widest-halo) mark hugging the strip edge is refused, even
-  though the same path with `fine` would fit.
+  though the same path with `fine` would fit;
+- a published mark with several strokes is one row: the page count goes up
+  by one, and every stroke appears on a no-JS `GET /`;
+- publishing is all or nothing: one bad stroke (outside the strip, unknown
+  brush, bad grammar) refuses the whole mark, and nothing is written;
+- more than the stroke cap, or an empty publish, is refused;
+- a claim holder can lift one of their own wet strokes, and the lift reaches
+  another SSE client; lifting with a wrong or missing token, or naming a
+  stroke under someone else's claim, is refused;
+- nothing can remove a published mark: after publishing, the same lift call
+  is refused and the mark is still on `GET /`;
+- a lapsed claim's wet strokes are never saved.
 
 `spec/invariants.test.ts` stays green and unchanged. `pnpm check` and
 `pnpm check:evidence` pass before every commit, and each commit is a
@@ -297,8 +371,9 @@ reviewable step, not one big dump.
 
 ## Leave alone
 
-- Never add an update or delete path for saved marks. No undo, no
-  accounts, no likes, no gallery, no moderation. Still one mark per visit
+- Never add an update or delete path for saved marks. The eraser works on
+  your own unpublished wet strokes only, never on a published mark or on
+  anyone else's. No accounts, no likes, no gallery, no moderation. Still one mark per visit
   (enforcing that per person is out of scope).
 - No new services (Redis, a queue, a second database) and no client-side
   framework. Hand-written TS in `src/lib/` like `draw.ts`.
@@ -308,9 +383,11 @@ reviewable step, not one big dump.
 
 ## What done looks like
 
-Two browser windows side by side on the live Fly URL: draw in one, and the
-other sees pale wet ink (in the brush and ink the drawer picked) following the brush in a strip next to its own,
-which darkens into a real mark the moment the first drawer lifts. Both
-people can draw at once, both marks are kept, nobody reloads. Check this
+Two browser windows side by side on the live Fly URL. Paint several strokes
+in one, changing ink between them, and the other sees pale wet ink (in each
+stroke's brush and ink) following the brush in a strip next to its own.
+Press Publish, and the whole mark darkens at once in both windows while the
+seal stamps in the first. Both people can paint at once, both marks are
+kept, nobody reloads. Check this
 against the deployed site after CI deploys, not just locally. If it isn't
 true there, you're not done.

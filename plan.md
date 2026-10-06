@@ -6,8 +6,9 @@ commit passes `pnpm check` and `pnpm check:evidence`.
 
 ## Goal
 
-Several people can draw at once. Each gets their own strip, everyone sees
-everyone else's wet ink live, and it dries in place with no reload. Real-time
+Several people can paint at once. Each gets their own strip and can lay down
+several strokes, everyone sees everyone else's wet ink live, and the whole
+mark dries in place when its painter presses Publish, with no reload. Real-time
 means a change reaches every other open session in about 1s.
 
 ## Problems being fixed
@@ -22,7 +23,9 @@ means a change reaches every other open session in about 1s.
 ## Phase 1 — Data model
 
 - [ ] Add a `strip` column to `strokes`, backfilled for existing rows (row order).
-- [ ] Add `brush` (default `broad`) and `ink` (default `jiao`) columns.
+- [ ] One row per **published mark** (so "N marks" still counts visits). Strokes stored in that row, each with `d`, width, brush and ink (a JSON column is fine).
+- [ ] Existing rows = one-stroke marks, `broad`/`jiao`, rendered exactly as now.
+- [ ] Publish writes all strokes in one statement (all or nothing).
 - [ ] Still one table, one SQLite file. No update or delete statements.
 - [ ] Per-brush halo spread in `layout.ts`. `zoneBounds` takes a strip index plus a brush.
 - [ ] Brush and ink id lists live in one shared module (server and client).
@@ -31,16 +34,17 @@ means a change reaches every other open session in about 1s.
 
 - [ ] Claim endpoint: hands out the **lowest strip that's neither saved nor held**, and returns an anonymous random token.
 - [ ] Claim happens on pointerdown or Enter/Space, not on save.
-- [ ] Claims live in process memory and expire after ~30–60s. An expired strip goes back into the pool (no permanent holes).
-- [ ] A claim carries brush and ink.
-- [ ] Save requires a valid token and is accepted only inside **that claim's** strip, using that brush's spread.
+- [ ] Claims live in process memory and expire after ~90s with no new stroke (each stroke resets the clock). An expired strip goes back into the pool (no permanent holes).
+- [ ] Wet strokes are held in memory with the claim. The claim holder can lift (remove) one of their own wet strokes by token, and nothing else can.
+- [ ] Publish requires a valid token. Every stroke must sit inside **that claim's** strip, using its own brush's spread.
+- [ ] Up to 24 strokes per mark, plus a total request size cap. Empty publish → refused.
 - [ ] Unknown brush or ink → 400. Absent → default.
 - [ ] Existing validation (path grammar, width, length, bare moveto) stays as strict as now.
 
 ## Phase 3 — Real-time transport
 
 - [ ] SSE endpoint with an in-memory subscriber set.
-- [ ] Events: mark saved, claim made, claim expired, wet-ink points (all carry brush and ink).
+- [ ] Events: mark published, claim made, claim expired, wet-ink points (all carry brush and ink).
 - [ ] Heartbeat comment every ~20s.
 - [ ] `Last-Event-ID` (stroke id) catch-up on reconnect.
 - [ ] Wet-ink upload: throttled POSTs every ~50–100ms. Points are dropped if they're outside the claim or have no claim. Rate-limited per claim.
@@ -49,12 +53,17 @@ means a change reaches every other open session in about 1s.
 ## Phase 4 — Client drawing flow
 
 - [ ] Remove `location.reload()`. Your mark dries in place.
-- [ ] Status after saving: "yours is mark 68. It stays." Then the page closes for drawing (one mark per visit).
-- [ ] Other people's wet ink: their chosen ink at ~45% opacity, soft edge, no halo. Dries to full strength with the halo fading in (~400ms).
+- [ ] Status after publishing: "yours is mark 68. It stays." Then the page closes for drawing (one mark per visit).
+- [ ] Several strokes per mark.
+- [ ] Eraser tool in the tray: tap or drag over your own wet stroke to lift the whole stroke (not pixels). A "Lift last stroke" button too. Lifts disappear live for everyone and count as claim activity.
+- [ ] The eraser never touches published marks or other people's wet strokes.
+- [ ] Publish `<button>` in the tray: disabled until 1+ stroke, labelled "Publish: no more erasing after this", disabled again if every stroke is lifted, no confirm dialog. On press, the whole mark dries and the seal stamps.
+- [ ] Lapse warning ~15s before the claim expires. A lapsed draft fades for everyone and is never auto-published.
+- [ ] Other people's wet ink: each stroke's ink at ~45% opacity, soft edge, no halo. On publish all strokes dry together, with the halo fading in (~400ms).
 - [ ] A claimed but empty strip shows a faint `--wet` wash.
 - [ ] Wet ink is never saved and never shown to later arrivals.
 - [ ] Presence = wet ink only. No cursors, avatars, names or online counter.
-- [ ] Keyboard path claims, uses the chosen brush and ink, and dries like a pointer mark.
+- [ ] Keyboard: arrow keys move a brush-tip cursor inside the strip, Enter/Space leaves a dot there (or lifts the stroke under the cursor when the eraser is selected), Tab reaches the tray, "Lift last stroke" and Publish. `aria-live` announces the stroke count and the published state.
 - [ ] If the claim expired while away, say so before drawing.
 
 ## Phase 5 — View behaviour and phones
@@ -76,7 +85,7 @@ means a change reaches every other open session in about 1s.
   - `dry`: streaky "flying white", filter or mask seeded by stroke id (same for every viewer)
   - `wash`: very wide, low opacity, big soft bleed
 - [ ] Tray below the scroll: two real radio groups (`fieldset`/`legend`, arrow keys), a sample stroke preview.
-- [ ] Choice is free until the brush touches down, then locked (one mark = one brush and one ink).
+- [ ] Brush and ink can change **between** strokes. Each stroke is locked to what it started with.
 - [ ] Tray hidden without JS.
 - [ ] Existing marks look exactly as before (`broad` + `jiao`).
 
@@ -110,23 +119,29 @@ means a change reaches every other open session in about 1s.
 - [ ] Expired claim's strip goes to the next claimer.
 - [ ] Unknown brush or ink → 400. Saved brush and ink appear on a no-JS `GET /`. Missing → `broad`/`jiao`.
 - [ ] `wash` mark hugging the edge is refused where `fine` would fit.
+- [ ] Multi-stroke publish = one row: count +1, every stroke on a no-JS `GET /`.
+- [ ] One bad stroke refuses the whole mark, and nothing is written.
+- [ ] Over the stroke cap, or empty → refused.
+- [ ] Own wet stroke can be lifted, and the lift reaches another SSE client. Wrong or missing token, or someone else's stroke → refused.
+- [ ] After publishing, lift is refused and the mark is still on `GET /`.
+- [ ] A lapsed claim's wet strokes are never saved.
 - [ ] `spec/invariants.test.ts` unchanged and green.
 
 ## Phase 9 — Writing it down
 
-- [ ] `docs/adr/0001-concurrent-drawers.md`: context, decision, alternatives (keep the 409 plus live updates; shared overlapping strip; first-come queue), costs (in-memory claims lost on restart, brief gaps, timeout tuning, wet ink as the only presence), tied to the README's "good".
-- [ ] Update `README.md`: real-time is here, no more stale-strip refusal, brushes and inks.
+- [ ] `docs/adr/0001-concurrent-drawers.md`: context, decision, alternatives (keep the 409 plus live updates; shared overlapping strip; first-come queue), rejected auto-publish on lapse; wet-only eraser (kinder drafting vs. the scroll no longer recording hesitations); costs (in-memory claims and drafts lost on restart, brief gaps, timeout tuning, wet ink as the only presence), tied to the README's "good".
+- [ ] Update `README.md`: real-time is here, no more stale-strip refusal, multi-stroke marks with a wet-ink eraser and Publish; rewrite "Nobody can undo it" as "final once it's dry"; brushes and inks.
 - [ ] Short C9 section in `PROCESS.md`. No reflection.
 
 ## Phase 10 — Ship and verify
 
 - [ ] Push to `main`. CI deploys to Fly.
-- [ ] On the **live** URL, two windows: wet ink follows the brush in the neighbouring strip, dries on lift, both marks are kept, no reloads.
+- [ ] On the **live** URL, two windows: paint several strokes (changing ink) and see them wet in the neighbouring strip. Publish → the whole mark dries in both windows and the seal stamps. Both marks are kept, no reloads.
 - [ ] Delete `prompt.md` in the last commit.
 
 ## Never
 
-- Update or delete a saved mark; undo; accounts; likes; gallery; moderation.
+- Update or delete a saved mark; erasing a published mark or someone else's wet stroke; a pixel eraser; accounts; likes; gallery; moderation.
 - A second service, a second table, or a client framework.
 - More brushes or inks, or a free colour picker.
 - Touching the top block of `CLAUDE.md`.
