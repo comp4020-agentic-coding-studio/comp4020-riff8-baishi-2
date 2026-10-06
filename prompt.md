@@ -60,7 +60,7 @@ while it's still wet.**
   Say that cost in the ADR.
 - **Wet ink is the presence indicator.** While someone is drawing, everyone
   else sees their stroke appear live in that person's strip, lighter and
-  grey-blue, with no halo: ink that hasn't dried. When it's saved it
+  softer, with no halo: ink that hasn't dried. When it's saved it
   *dries*. It darkens into the normal ink with its soft halo, through a
   short transition (a few hundred ms; respect
   `prefers-reduced-motion`). A strip that's been claimed but not yet drawn
@@ -121,8 +121,9 @@ grows), mounted on dark silk and laid on a table. The scroll is the only
 object that matters on the page, and everything else steps back from it.
 
 **Palette.** Five colours, defined as tokens on `:root` in
-`src/styles/global.css` and used everywhere. No other colours. These
-contrast ratios have been checked:
+`src/styles/global.css` and used everywhere. The only other colours are
+the visitors' inks (see "Brushes and inks" below), which only ever appear
+as ink on paper, never on UI. These contrast ratios have been checked:
 
 | token          | value                    | role |
 |----------------|--------------------------|------|
@@ -162,10 +163,10 @@ ink is black.
   (e.g. "六十八" or just "68"; pick one and keep it). It's drawn by the
   client, on your page only, and never saved. It's how the page says
   "this one is yours" without accounts. Other people's marks get no seal.
-- *Wet ink*: `--wet` at about 60% opacity, with no halo, and the stroke
-  edge slightly soft (a light blur filter is fine). Drying is a transition
-  from `--wet` to `--ink`, with the halo fading in. A claimed but empty
-  strip gets a very faint `--wet` wash.
+- *Wet ink*: the drawer's chosen ink at about 45% opacity, with no halo,
+  and the stroke edge slightly soft (a light blur filter is fine). Drying
+  is a transition to full strength, with the halo fading in. A claimed
+  but empty strip gets a very faint `--wet` wash.
 - *The draw-here strip*: drop the dashed box. Use a slightly brighter
   patch of paper with the prompt in italic cinnabar, as if it were an
   invitation brushed onto the paper.
@@ -196,6 +197,68 @@ Check the finished page at 375px and 1440px wide, and keep any contrast
 you introduce at or above WCAG AA. `PROCESS.md` already notes that axe
 can't measure SVG text contrast, so measure that by hand.
 
+## Brushes and inks: choice, inside the tradition
+
+Visitors choose a brush and an ink before they draw. The choice comes
+from Chinese ink painting, not a paint app. There's no colour picker, no
+RGB and no hex input, only a short, fixed set. A scroll where every
+mark uses a different arbitrary colour stops reading as one piece. A
+small set keeps it whole and still gives each mark a voice.
+
+**Inks.** Ink painting says "ink has five colours" (墨分五色): one black
+ground to different strengths. Offer four of those tones and three
+mineral pigments, seven in all. Each has been checked to show against
+`--paper` (3:1 or better, the bar for graphics):
+
+| id       | name              | value     | on paper |
+|----------|-------------------|-----------|----------|
+| `jiao`   | scorched ink 焦墨 | `#1d1b19` | 14.6:1 (the default: what every mark so far is) |
+| `nong`   | dense ink 浓墨    | `#3a3631` | 10.2:1 |
+| `zhong`  | heavy ink 重墨    | `#5e5850` | 6.0:1 |
+| `dan`    | light ink 淡墨    | `#8f877c` | 3.0:1 |
+| `indigo` | indigo 花青       | `#2f4f6f` | 7.2:1 |
+| `ochre`  | ochre 赭石        | `#9a5b2e` | 4.6:1 |
+| `malachite` | malachite 石绿 | `#3e7a64` | 4.3:1 |
+
+**Cinnabar is not an ink.** It stays reserved for the seal, so red on the
+scroll always means "yours". The halo of each mark is its own ink at the
+same low alpha the current `--ink-soft` uses.
+
+**Brushes.** Four, each a different way of rendering the same one-path
+mark:
+
+| id      | name                 | feel |
+|---------|----------------------|------|
+| `broad` | soft goat-hair 羊毫  | today's brush, unchanged: width 3–14 by speed. The default, and what every existing mark is |
+| `fine`  | wolf-hair liner 狼毫 | thin and crisp, width about 1.5–5, small halo |
+| `dry`   | flying white 飞白    | broad and streaky, with paper showing through the stroke. Render it with an SVG filter or mask seeded from the stroke id, so every viewer sees exactly the same streaks |
+| `wash`  | wet wash 泼墨        | very wide, low opacity, big soft bleed: for shading rather than line |
+
+A brush with a wider halo reaches further, so `zoneBounds` and the server
+check must use **that brush's** spread, not the global `SOFT_SPREAD`. The
+"never paint over a neighbour" promise holds per brush, and the
+validation-test pattern from crit 8 should cover the widest one.
+
+**The tray.** Below the scroll, on the silk, sits a small inkstone and
+brush rest: seven ink dots and four brush tips. Each group is a real radio
+group (`<fieldset>`, `<legend>`, labelled inputs, arrow keys move within a
+group), not hit-tested shapes. Show the current brush-and-ink as a tiny
+sample stroke. The choice can change freely until the brush touches down,
+and is locked from then on: **one mark is one brush and one ink.** That
+keeps the one-mark-per-visit rule intact, with no switching mid-stroke and
+no layering a second colour. Keyboard drawing (Enter/Space) uses the
+chosen brush and ink too. Without JavaScript the tray isn't shown at all,
+since there's nothing to draw with.
+
+**Data.** Add `brush` and `ink` columns to the existing `strokes` table,
+defaulting to `broad` / `jiao` so every existing mark renders exactly as
+it does today. The server accepts only ids from these two lists and
+rejects anything else with a 400. An absent field means the default. The
+claim, the wet-ink stream and the SSE "mark saved" event all carry brush
+and ink, so other viewers see the right wet colour while it's drawn. The
+server-rendered `/` draws each mark with its own brush and ink, with or
+without JavaScript.
+
 ## Tests (these gate the deploy)
 
 `spec/scroll.test.ts` should keep every promise it holds now (persistence,
@@ -209,7 +272,12 @@ claims where needed. Add specs that would have failed before this work:
 - a second SSE client receives a newly saved mark within about one second;
 - wet-ink points from a valid claim reach another SSE client, and points
   outside the claim do not;
-- an expired claim's strip is handed to the next claimer.
+- an expired claim's strip is handed to the next claimer;
+- an unknown brush or ink id is refused with a 400, a mark saved with a
+  given brush and ink comes back with them on a fresh `GET /` (no JS), and
+  a mark with no brush or ink is saved as `broad` / `jiao`;
+- a `wash` (widest-halo) mark hugging the strip edge is refused, even
+  though the same path with `fine` would fit.
 
 `spec/invariants.test.ts` stays green and unchanged. `pnpm check` and
 `pnpm check:evidence` pass before every commit, and each commit is a
@@ -234,13 +302,14 @@ reviewable step, not one big dump.
   (enforcing that per person is out of scope).
 - No new services (Redis, a queue, a second database) and no client-side
   framework. Hand-written TS in `src/lib/` like `draw.ts`.
-- Don't change the look of saved marks (ink, halo, paper) beyond the drying
-  transition. Don't touch the top block of `CLAUDE.md`.
+- Existing marks must look exactly as they do today (`broad` + `jiao`).
+  Don't add brushes or inks beyond the lists above, and no free colour
+  picker. Don't touch the top block of `CLAUDE.md`.
 
 ## What done looks like
 
 Two browser windows side by side on the live Fly URL: draw in one, and the
-other sees grey wet ink following the brush in a strip next to its own,
+other sees pale wet ink (in the brush and ink the drawer picked) following the brush in a strip next to its own,
 which darkens into a real mark the moment the first drawer lifts. Both
 people can draw at once, both marks are kept, nobody reloads. Check this
 against the deployed site after CI deploys, not just locally. If it isn't
