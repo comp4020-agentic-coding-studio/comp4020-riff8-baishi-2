@@ -14,14 +14,10 @@
   --wood: #4a2f1d;
   --wood-grain: #6b4a30;
   --scroll-h: clamp(270px, 52vh, 600px);
+  /* One theme. The paper doesn't dim under prefers-color-scheme: dark,
+     though pod 2's brief asked for it: light ink (dan) is only 3.0:1 on
+     this paper, so any dimming takes it under the 3:1 graphics bar. */
   color-scheme: dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  /* one theme: the paper only dims so it doesn't glare at night */
-  :root {
-    --paper: #e4dccd;
-  }
 }
 
 @media (min-width: 700px) {
@@ -47,8 +43,10 @@ a {
   text-underline-offset: 0.18em;
 }
 
+/* Focus on the silk is light: cinnabar on --mount is only 2.4:1, under the
+   3:1 a focus ring needs. Cinnabar marks focus on the paper (the strip). */
 :focus-visible {
-  outline: 3px solid var(--seal);
+  outline: 3px solid var(--on-mount);
   outline-offset: 2px;
 }
 
@@ -160,12 +158,12 @@ h1 {
 /* The bright strip: an invitation brushed onto the paper, not a dashed box. */
 .invite {
   fill: #fff;
-  opacity: 0.45;
+  opacity: 0.6;
 }
 
 .zone-prompt {
-  /* --seal on paper is 5.2:1 (on the brighter patch, higher), measured by
-     hand: axe can't measure SVG text */
+  /* measured by hand, since axe can't measure SVG text: 5.4:1 on the
+     bright patch, 4.8:1 where the paper grain is darkest */
   fill: var(--seal);
   font-size: 22px;
   font-style: italic;
@@ -389,13 +387,13 @@ legend,
 }
 
 .chip input:checked + svg {
-  outline: 2px solid var(--on-mount);
+  outline: 2px solid var(--on-mount-quiet);
   outline-offset: 2px;
 }
 
 .chip input:focus-visible + svg {
-  outline: 3px solid var(--seal);
-  outline-offset: 2px;
+  outline: 3px solid var(--on-mount);
+  outline-offset: 3px;
 }
 
 fieldset:disabled .chip {
