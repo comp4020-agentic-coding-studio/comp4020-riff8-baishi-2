@@ -1,21 +1,46 @@
 ---
 import "../styles/global.css";
-import { getAllStrokes } from "../lib/db";
-import { HEIGHT, SEGMENT, SOFT_SPREAD, totalWidth, zoneStart } from "../lib/layout";
+import { BRUSHES, INKS, DEFAULT_BRUSH, DEFAULT_INK, type BrushId } from "../lib/brushes";
+import { heldStrips } from "../lib/claims";
+import { getMarks } from "../lib/db";
+import { dryStrokeNodes, markNode, toMarkup } from "../lib/ink";
+import { HEIGHT, SEGMENT, lowestFree, paperWidth, stripStart, totalWidth } from "../lib/layout";
+import { drawingNow, marksLabel } from "../lib/label";
 
-const strokes = getAllStrokes();
-const count = strokes.length;
-const width = totalWidth(count);
-const zoneX = zoneStart(count);
+const marks = getMarks();
+const count = marks.length;
+const held = heldStrips();
+const invite = lowestFree([...marks.map((m) => m.strip), ...held]);
+const strips = Math.max(invite, ...marks.map((m) => m.strip), ...held) + 1;
+const paperW = paperWidth(strips);
+const width = totalWidth(strips);
+const lastId = marks.length > 0 ? marks[marks.length - 1].id : 0;
+const firstAt = marks.length > 0 ? marks[0].createdAt : null;
 
-const since =
-  count > 0
-    ? new Date(strokes[0].createdAt).toLocaleDateString("en-AU", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      })
-    : null;
+// The scroll's own frame: paper from y=0 to HEIGHT, plus room above and
+// below for the roller's ends.
+const TOP = -18;
+const FRAME_H = HEIGHT + 36;
+
+const marksMarkup = marks.map((m) => toMarkup(markNode(m))).join("");
+
+// A tiny stroke in each brush, for its chip in the tray.
+const tipMarkup = (brush: BrushId): string =>
+  dryStrokeNodes(
+    {
+      d: brush === "wash" ? "M 14 20 Q 30 18 46 20" : "M 8 26 Q 24 8 40 16 L 52 14",
+      width: brush === "wash" ? 18 : brush === "fine" ? 2 : brush === "dry" ? 9 : 7,
+      brush,
+      ink: DEFAULT_INK,
+    },
+    0,
+    0,
+    Object.keys(BRUSHES).indexOf(brush),
+  )
+    .map(toMarkup)
+    .join("")
+    .replaceAll('id="dry-0-', 'id="tip-dry-')
+    .replaceAll("url(#dry-0-", "url(#tip-dry-");
 ---
 
 <!doctype html>
@@ -26,78 +51,160 @@ const since =
     <title>The Scroll</title>
     <meta
       name="description"
-      content="A shared ink scroll that only ever grows: one mark per visit, none of them ever erased."
+      content="A shared ink scroll that only ever grows: one mark per visit, painted while others watch, and none of them ever erased once dry."
     />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script is:inline>
+      document.documentElement.classList.add("js");
+    </script>
   </head>
   <body>
-    <header>
+    <header class="masthead">
       <h1>The Scroll</h1>
-      <p class="tagline">
-        One mark, then it stays. <a href="/readme/">What this is, and why</a>.
-      </p>
     </header>
 
     <main>
-      <div id="canvas-wrap">
-        <svg
-          id="scroll"
-          viewBox={`0 0 ${width} ${HEIGHT}`}
-          width={width}
-          height={HEIGHT}
-          aria-label={`A shared ink scroll of ${count} mark${count === 1 ? "" : "s"} left so far, with a blank space at the end for yours`}
-        >
-          <rect x="0" y="0" width={width} height={HEIGHT} class="paper" />
+      <div id="canvas-wrap" class="scroll-wrap">
+        <div class="scroll-inner" style={`--paper-frac: ${paperW / width}`}>
+          <div class="paper-shadow" aria-hidden="true"></div>
+          <svg
+            id="scroll"
+            viewBox={`0 ${TOP} ${width} ${FRAME_H}`}
+            style={`aspect-ratio: ${width} / ${FRAME_H}`}
+            data-last-id={lastId}
+            data-count={count}
+            data-first-at={firstAt ?? ""}
+            data-strips={strips}
+            data-held={held.join(",")}
+            aria-label={`A shared ink scroll of ${count} mark${count === 1 ? "" : "s"} left so far, with a blank strip at the end for yours`}
+          >
+            <defs>
+              <filter id="grain-f" filterUnits="userSpaceOnUse" x="0" y="0" width="240" height="240">
+                <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch" />
+                <feColorMatrix type="matrix" values="0 0 0 0 0.29  0 0 0 0 0.25  0 0 0 0 0.2  0 0 0 -0.9 0.55" />
+              </filter>
+              <pattern id="grain" width="240" height="240" patternUnits="userSpaceOnUse">
+                <rect width="240" height="240" filter="url(#grain-f)" />
+              </pattern>
+              <filter id="wet-soft" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="0.8" />
+              </filter>
+            </defs>
 
-          {
-            strokes.map((s) => (
-              <>
-                <path d={s.d} class="ink-soft" stroke-width={s.width * SOFT_SPREAD} />
-                <path d={s.d} class="ink" stroke-width={s.width} />
-              </>
-            ))
-          }
+            <rect id="paper" x="0" y="0" width={paperW} height={HEIGHT} class="paper" />
+            <rect id="paper-grain" x="0" y="0" width={paperW} height={HEIGHT} class="grain" />
 
-          <rect
-            id="zone-outline"
-            x={zoneX + 4}
-            y="4"
-            width={SEGMENT - 8}
-            height={HEIGHT - 8}
-            class="zone-outline"
-          />
-          <text id="zone-prompt" x={zoneX + SEGMENT / 2} y={HEIGHT / 2} class="zone-prompt">
-            draw here
-          </text>
-          <path id="preview" d="" class="ink" />
-          <rect
-            id="zone-hit"
-            x={zoneX}
-            y="0"
-            width={SEGMENT}
-            height={HEIGHT}
-            class="zone-hit"
-            tabindex="0"
-            role="button"
-            aria-label="Draw your mark here: drag with a pointer, or press Enter or Space to leave a dot"
-          />
-        </svg>
+            <g class="silk" aria-hidden="true">
+              <rect x="0" y="0" width="64" height={HEIGHT} class="silk-border" />
+              <rect x="20" y="30" width="26" height="172" class="slip" />
+              <text x="33" y="44" class="slip-title">The Scroll</text>
+            </g>
+
+            <g id="invite" class="needs-js" transform={`translate(${stripStart(invite)} 0)`}>
+              <rect x="6" y="6" width={SEGMENT - 12} height={HEIGHT - 12} class="invite" />
+              <text id="zone-prompt" x={SEGMENT / 2} y={HEIGHT / 2} class="zone-prompt">
+                paint here
+              </text>
+            </g>
+
+            <g id="marks" set:html={marksMarkup} />
+            <g id="claims" />
+            <g id="mine" transform={`translate(${stripStart(invite)} 0)`} />
+            <g id="seals" />
+            <circle id="cursor" class="cursor" r="6" cx="-100" cy="-100" />
+
+            <rect
+              id="zone-hit"
+              class="zone-hit needs-js"
+              x={stripStart(invite)}
+              y="0"
+              width={SEGMENT}
+              height={HEIGHT}
+              tabindex="0"
+              role="button"
+              aria-label="Your strip. Paint with a pointer, or move the brush with the arrow keys and press Enter or Space to leave a dot."
+            />
+
+            <g id="roller" class="roller" style={`transform: translateX(${paperW}px)`} aria-hidden="true">
+              <rect x="0" y="0" width="10" height={HEIGHT} class="unroll" />
+              <rect x="8" y="-14" width="22" height={HEIGHT + 28} rx="11" class="roller-bar" />
+              <rect x="13" y="-6" width="4" height={HEIGHT + 12} rx="2" class="roller-grain" />
+            </g>
+          </svg>
+        </div>
       </div>
 
-      <p id="status" class="status" aria-live="polite">
-        {count === 0
-          ? "Nobody has drawn yet. The blank strip at the right is where you go first."
-          : `${count} mark${count === 1 ? "" : "s"} so far, since ${since}.`}
-      </p>
+      <div class="below">
+        <button id="new-marks" class="new-marks" type="button" hidden></button>
+
+        <form id="tray" class="tray" hidden>
+          <fieldset class="inks">
+            <legend>Ink: <span id="ink-name">{INKS[DEFAULT_INK].name} {INKS[DEFAULT_INK].han}</span></legend>
+            <div class="chips">
+              {
+                Object.entries(INKS).map(([id, ink]) => (
+                  <label class="chip" title={`${ink.name} ${ink.han}`}>
+                    <input type="radio" name="ink" value={id} checked={id === DEFAULT_INK} />
+                    <svg viewBox="0 0 32 32" aria-hidden="true">
+                      <rect class="chip-paper" width="32" height="32" />
+                      <circle cx="16" cy="16" r="8" fill={ink.hex} />
+                    </svg>
+                    <span class="sr-only">{ink.name} {ink.han}</span>
+                  </label>
+                ))
+              }
+            </div>
+          </fieldset>
+
+          <fieldset class="brushes">
+            <legend>Brush: <span id="brush-name">{BRUSHES[DEFAULT_BRUSH].name} {BRUSHES[DEFAULT_BRUSH].han}</span></legend>
+            <div class="chips">
+              {
+                (Object.keys(BRUSHES) as BrushId[]).map((id) => (
+                  <label class="chip chip-wide" title={`${BRUSHES[id].name} ${BRUSHES[id].han}`}>
+                    <input type="radio" name="brush" value={id} checked={id === DEFAULT_BRUSH} />
+                    <svg viewBox="0 0 60 32" aria-hidden="true">
+                      <rect class="chip-paper" width="60" height="32" />
+                      <g set:html={tipMarkup(id)} />
+                    </svg>
+                    <span class="sr-only">{BRUSHES[id].name} {BRUSHES[id].han}</span>
+                  </label>
+                ))
+              }
+            </div>
+          </fieldset>
+
+          <div class="sample-wrap">
+            <span class="tray-label" id="sample-label">Next stroke</span>
+            <svg id="sample" class="sample" viewBox="0 0 120 40" role="img" aria-labelledby="sample-label">
+              <rect class="chip-paper" width="120" height="40" />
+              <g id="sample-ink" />
+            </svg>
+          </div>
+
+          <div class="tools">
+            <button type="button" id="eraser" aria-pressed="false">Eraser</button>
+            <button type="button" id="lift-last" disabled>Lift last stroke</button>
+            <button type="button" id="publish" class="publish" disabled>
+              Publish: no more erasing after this
+            </button>
+          </div>
+
+          <p id="draw-status" class="draw-status" aria-live="polite"></p>
+        </form>
+
+        <p class="label">
+          <span id="label-count">{marksLabel(count, firstAt)}</span>{" "}
+          <span id="label-drawing">{drawingNow(held.length)}</span>{" "}
+          <a href="/readme/">What this is, and why</a>
+        </p>
+      </div>
     </main>
 
     <script>
-      import { initDrawing } from "../lib/draw";
+      import { initScroll } from "../lib/draw";
 
-      initDrawing(document);
-
-      const wrap = document.getElementById("canvas-wrap");
-      if (wrap) wrap.scrollLeft = wrap.scrollWidth;
+      initScroll(document);
     </script>
   </body>
 </html>
