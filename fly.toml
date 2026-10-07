@@ -35,6 +35,14 @@ auto_stop_machines = "stop"
 auto_start_machines = true
 min_machines_running = 0
 
+# Every open tab holds one server-sent-events stream (src/pages/api/events.ts),
+# so Fly's default limit of 25 connections a machine would turn a crit room
+# away. Each stream is a few kilobytes; the app caps itself at 200.
+[http_service.concurrency]
+type = "connections"
+soft_limit = 200
+hard_limit = 250
+
 [[vm]]
 size = "shared-cpu-1x"
 memory = "256mb"

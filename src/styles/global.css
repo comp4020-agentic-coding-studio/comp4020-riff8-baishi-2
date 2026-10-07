@@ -80,7 +80,7 @@ h1 {
   overflow-x: auto;
   overflow-y: hidden;
   padding-block: 1.25rem 1.75rem;
-  touch-action: pan-x pinch-zoom;
+  touch-action: pan-x pan-y pinch-zoom;
   scrollbar-color: var(--wet) transparent;
 }
 
@@ -219,7 +219,7 @@ html.js .needs-js:not(.closed) {
 
 .wash {
   fill: var(--wet);
-  opacity: 0.06;
+  opacity: 0.045;
 }
 
 .claim {
