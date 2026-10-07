@@ -2,7 +2,6 @@
 // JavaScript needed to see the scroll) and the client (wet ink, your own
 // mark drying in place), so a mark looks the same whichever drew it.
 import { BRUSHES, HALO_ALPHA, INKS, WET_ALPHA, type BrushId, type InkId } from "./brushes";
-import { HEIGHT, SEGMENT, stripStart } from "./layout";
 
 export interface StrokeData {
   d: string;
@@ -66,16 +65,31 @@ export function pathPoints(d: string): Point[] | null {
   return points;
 }
 
-// The flying-white streaks are noise seeded from the mark's own id, so every
-// viewer sees exactly the same paper showing through the same stroke.
+// The flying-white streaks come from the mark's own id, so every viewer
+// sees exactly the same paper showing through the same stroke.
 export function drySeed(markId: number, index: number): number {
   return (markId * 7919 + index * 104729) % 9973;
 }
 
+// A small seeded generator (mulberry32): same seed, same bristles.
+function seeded(seed: number): () => number {
+  let a = seed + 0x6d2b79f5;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// The wash's soft bleed is a blur of this many user units: zoneBounds
+// allows for it through the brush's spread (see brushes.ts).
+export const BLEED = 3;
+
 // One dry (published) stroke: a soft halo in its own ink, then the core.
 export function dryStrokeNodes(
   stroke: StrokeData,
-  strip: number,
+  _strip: number,
   markId: number,
   index: number,
 ): SvgNode[] {
@@ -90,65 +104,47 @@ export function dryStrokeNodes(
     "data-brush": stroke.brush,
     "data-ink": stroke.ink,
   };
-  const nodes: SvgNode[] = [];
-  const core: SvgNode = {
-    tag: "path",
-    attrs: { ...common, class: "core", "stroke-width": stroke.width, opacity: brush.core },
-  };
-  if (stroke.brush === "dry") {
-    const id = `dry-${markId}-${index}`;
-    nodes.push(dryFilter(id, strip, drySeed(markId, index)));
-    core.attrs.filter = `url(#${id})`;
-  }
-  nodes.push({
+  const halo: SvgNode = {
     tag: "path",
     attrs: {
       ...common,
       class: "halo",
-      "stroke-width": round(stroke.width * brush.spread),
+      "stroke-width": round(stroke.width * brush.halo),
       "stroke-opacity": HALO_ALPHA,
     },
-  });
-  nodes.push(core);
-  return nodes;
-}
-
-function dryFilter(id: string, strip: number, seed: number): SvgNode {
-  return {
-    tag: "filter",
-    attrs: {
-      id,
-      filterUnits: "userSpaceOnUse",
-      x: stripStart(strip),
-      y: 0,
-      width: SEGMENT,
-      height: HEIGHT,
-    },
-    children: [
-      {
-        tag: "feTurbulence",
-        attrs: {
-          type: "fractalNoise",
-          baseFrequency: "0.012 0.55",
-          numOctaves: 2,
-          seed,
-          result: "grain",
-        },
-      },
-      {
-        // Alpha from the noise's red channel, pushed hard so the stroke
-        // breaks into streaks with paper showing between them.
-        tag: "feColorMatrix",
-        attrs: {
-          in: "grain",
-          type: "matrix",
-          values: "0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  7 0 0 0 -2.6",
-          result: "streaks",
-        },
-      },
-      { tag: "feComposite", attrs: { in: "SourceGraphic", in2: "streaks", operator: "in" } },
-    ],
   };
+  if (stroke.brush === "wash") halo.attrs.filter = "url(#bleed)";
+  if (stroke.brush !== "dry") {
+    return [
+      halo,
+      { tag: "path", attrs: { ...common, class: "core", "stroke-width": stroke.width, opacity: brush.core } },
+    ];
+  }
+  // Flying white: the brush runs dry, its bristles part, and paper shows
+  // through in streaks along the stroke. A bundle of thin bristle lines,
+  // each offset a little and broken by its own dashes.
+  const rand = seeded(drySeed(markId, index));
+  const bristles: SvgNode[] = [];
+  const n = 6;
+  for (let i = 0; i < n; i++) {
+    const offset = ((i + 0.5) / n - 0.5) * stroke.width * 0.8;
+    const dashes = Array.from({ length: 6 }, (_, j) =>
+      round(j % 2 === 0 ? 14 + rand() * 60 : 2 + rand() * 12),
+    ).join(" ");
+    bristles.push({
+      tag: "path",
+      attrs: {
+        ...common,
+        class: i === 0 ? "core" : "core bristle",
+        "stroke-width": round(Math.max(1, stroke.width / 4.5)),
+        "stroke-dasharray": dashes,
+        "stroke-dashoffset": round(rand() * 80),
+        transform: `translate(${round(offset * 0.7)} ${round(offset)})`,
+        opacity: brush.core,
+      },
+    });
+  }
+  return [halo, ...bristles];
 }
 
 // A whole published mark, one group per mark, so it can dry as one.

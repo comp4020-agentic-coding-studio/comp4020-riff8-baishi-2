@@ -12,14 +12,16 @@ export const INKS = {
   malachite: { name: "malachite", han: "石绿", hex: "#3e7a64" },
 } as const;
 
-// min/max: the core stroke width range. spread: how many times wider the
-// halo is than the core, which is what decides how far a mark's ink reaches
-// (zoneBounds). core: the dry core stroke's opacity.
+// min/max: the core stroke width range. halo: how many times wider the soft
+// halo is than the core. spread: how far, in core widths, the ink reaches
+// from its path in all — the halo, plus the wash's blur (ink.ts's BLEED,
+// which needs w >= 24 to fit) — which is what zoneBounds checks against.
+// core: the dry core stroke's opacity.
 export const BRUSHES = {
-  broad: { name: "soft goat-hair", han: "羊毫", min: 3, max: 14, spread: 1.8, core: 0.9 },
-  fine: { name: "wolf-hair liner", han: "狼毫", min: 1.5, max: 5, spread: 1.3, core: 0.95 },
-  dry: { name: "flying white", han: "飞白", min: 4, max: 16, spread: 1.4, core: 0.9 },
-  wash: { name: "wet wash", han: "泼墨", min: 16, max: 40, spread: 2.2, core: 0.3 },
+  broad: { name: "soft goat-hair", han: "羊毫", min: 3, max: 14, halo: 1.8, spread: 1.8, core: 0.9 },
+  fine: { name: "wolf-hair liner", han: "狼毫", min: 1.5, max: 5, halo: 1.3, spread: 1.3, core: 0.95 },
+  dry: { name: "flying white", han: "飞白", min: 6, max: 16, halo: 1.3, spread: 1.4, core: 0.9 },
+  wash: { name: "wet wash", han: "泼墨", min: 24, max: 40, halo: 1.4, spread: 2.2, core: 0.3 },
 } as const;
 
 export type InkId = keyof typeof INKS;

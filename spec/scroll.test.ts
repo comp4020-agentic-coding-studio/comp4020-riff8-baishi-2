@@ -230,7 +230,7 @@ it("publishes a several-stroke mark as one row: the count goes up by one, and ev
   const strokes = [
     { d: dash(c.strip, -60), width: 6, brush: "broad", ink: "jiao" },
     { d: dash(c.strip, 0), width: 3, brush: "fine", ink: "ochre" },
-    { d: dash(c.strip, 60), width: 20, brush: "wash", ink: "malachite" },
+    { d: dash(c.strip, 60), width: 26, brush: "wash", ink: "malachite" },
   ];
   const res = await publish(c.token, strokes);
   expect(res.status).toBe(201);

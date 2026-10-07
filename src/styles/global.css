@@ -258,7 +258,8 @@ html.js .needs-js:not(.closed) {
 }
 
 /* Drying: wet ink darkens to full strength and its halo comes in. */
-.mark.fresh .core {
+.mark.fresh .core,
+.mark.fresh .bristle {
   animation: dry-core 400ms ease-out;
 }
 

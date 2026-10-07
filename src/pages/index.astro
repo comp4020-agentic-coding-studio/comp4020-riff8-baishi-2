@@ -3,7 +3,7 @@ import "../styles/global.css";
 import { BRUSHES, INKS, DEFAULT_BRUSH, DEFAULT_INK, type BrushId } from "../lib/brushes";
 import { heldStrips } from "../lib/claims";
 import { getMarks } from "../lib/db";
-import { dryStrokeNodes, markNode, toMarkup } from "../lib/ink";
+import { BLEED, dryStrokeNodes, markNode, toMarkup } from "../lib/ink";
 import { HEIGHT, SEGMENT, lowestFree, paperWidth, stripStart, totalWidth } from "../lib/layout";
 import { drawingNow, marksLabel } from "../lib/label";
 
@@ -38,9 +38,7 @@ const tipMarkup = (brush: BrushId): string =>
     Object.keys(BRUSHES).indexOf(brush),
   )
     .map(toMarkup)
-    .join("")
-    .replaceAll('id="dry-0-', 'id="tip-dry-')
-    .replaceAll("url(#dry-0-", "url(#tip-dry-");
+    .join("");
 ---
 
 <!doctype html>
@@ -86,8 +84,13 @@ const tipMarkup = (brush: BrushId): string =>
               <pattern id="grain" width="240" height="240" patternUnits="userSpaceOnUse">
                 <rect width="240" height="240" filter="url(#grain-f)" />
               </pattern>
-              <filter id="wet-soft" x="-20%" y="-20%" width="140%" height="140%">
+              <!-- user-space regions: a straight stroke's bounding box can be
+                   zero-high, and a box-relative region would clip it away -->
+              <filter id="wet-soft" filterUnits="userSpaceOnUse" x="-100" y="-100" width="1000000" height="700">
                 <feGaussianBlur stdDeviation="0.8" />
+              </filter>
+              <filter id="bleed" filterUnits="userSpaceOnUse" x="-100" y="-100" width="1000000" height="700">
+                <feGaussianBlur stdDeviation={BLEED} />
               </filter>
             </defs>
 

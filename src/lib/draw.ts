@@ -301,11 +301,7 @@ export function initScroll(root: Document): void {
         0,
         0,
         99,
-      ).map((n) => {
-        if (n.tag === "filter") n.attrs = { ...n.attrs, id: "sample-dry", x: 0, width: 120, height: 40 };
-        if (n.attrs.filter) n.attrs.filter = "url(#sample-dry)";
-        return build(n);
-      }),
+      ).map(build),
     );
   };
 
