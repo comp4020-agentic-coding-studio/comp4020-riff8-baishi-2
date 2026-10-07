@@ -205,9 +205,13 @@ export function initScroll(root: Document): void {
 
   const updateButtons = (): void => {
     const open = !published && !publishing;
+    const focused = root.activeElement;
     publishBtn.disabled = !open || myStrokes.length === 0;
     liftBtn.disabled = !open || myStrokes.length === 0;
     eraserBtn.disabled = !open;
+    // A button that just disabled itself under the keyboard would drop
+    // focus to the page; hand it back to the strip instead.
+    if (focused instanceof HTMLButtonElement && focused.disabled && open) zone.focus();
   };
 
   // --- layout: where the bright strip sits, how long the paper is ----------
@@ -344,8 +348,9 @@ export function initScroll(root: Document): void {
 
   // Your claim lapsed: the server lifted your wet ink for everyone and gave
   // the strip back. Say so before you paint again, not after.
-  const lapse = (why = "Your strip lapsed after 90 seconds without a stroke, and its wet ink was lifted."): void => {
+  const lapse = (why?: string): void => {
     if (!me || published || publishing) return;
+    why ??= `Your strip lapsed after ${Math.round(me.idleMs / 1000)} seconds without a stroke, and its wet ink was lifted.`;
     me = null;
     if (warnTimer) clearTimeout(warnTimer);
     if (lapseTimer) clearTimeout(lapseTimer);
