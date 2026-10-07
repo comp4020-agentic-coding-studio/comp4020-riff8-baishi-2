@@ -120,10 +120,39 @@ and in-range dependency patches. Some checks came back clean and changed
 nothing: dark-mode contrast, 200% zoom, and an `html-validate` warning I
 confirmed is the tool contradicting its own rules.
 
+## Crit 9: all at once (pod 2's riff)
+
+Pod 2 wrote this crit's brief (`prompt.md`), and I ran it unattended in
+one pass. Their diagnosis was right: four people opening the scroll
+together got the same strip, three of them lost a finished mark to a 409,
+and nobody saw anybody else. Their decision was that every painter gets
+their own strip and everyone watches the wet ink. I built that and argued
+it in `docs/adr/0001-concurrent-drawers.md`.
+
+The order was server first, so the claim was enforced before any client
+relied on it. Claims, wet ink over SSE and whole-mark publish came with a
+rewritten `spec/scroll.test.ts` (23 cases, every one the brief listed)
+([`96f3a24`](https://github.com/comp4020-agentic-coding-studio/comp4020-riff8-baishi-2/commit/96f3a24)). Then the client
+([`8e8476b`](https://github.com/comp4020-agentic-coding-studio/comp4020-riff8-baishi-2/commit/8e8476b)), then the handscroll design
+([`5f45095`](https://github.com/comp4020-agentic-coding-studio/comp4020-riff8-baishi-2/commit/5f45095)). Two calls the brief left open: the
+spec tests expiry by asking for a shorter claim (a request can only shorten
+its own hold), and older rows get their strip derived on read rather than
+backfilled, so `db.ts` still has no UPDATE.
+
+Checking in a real browser changed three things the specs couldn't see.
+The first dry brush streaked across the stroke, not along it, and a
+straight wet stroke vanished, because a box-relative filter region clips a
+zero-height bounding box
+([`beac458`](https://github.com/comp4020-agentic-coding-studio/comp4020-riff8-baishi-2/commit/beac458)). The page also opened on a strip
+someone else already held, because the client learned about claims only
+when the stream's first event arrived. And two of the brief's own contrast
+figures were wrong: cinnabar on the silk is 2.4:1, not 4.4:1, so focus
+rings there went light, and dimming the paper in dark mode would take
+light ink under 3:1, so the paper doesn't dim. Both are written down where
+they deviate from the brief.
+
 ## What's still open
 
-Real-time sync, identity and "one mark per visitor" are next crits' scope,
-named in `README.md`, not gaps I missed. The shared-strip refusal is a
-stopgap that crit 9's concurrency decision should replace. If that decision
-needs more than one table, the no-ORM choice above gets revisited in
-writing.
+"One mark per visitor" is still judged, not enforced: the only identity is
+a claim's anonymous token. Claims and wet ink live in memory, so a restart
+costs whatever was mid-paint; the ADR names that cost and the others.
