@@ -2,7 +2,7 @@
 // set of subscribers is the whole real-time layer. Nothing here is saved;
 // see docs/adr/0001-concurrent-drawers.md for what that costs.
 
-type Send = (chunk: string) => void;
+type Send = (chunk: Uint8Array) => void;
 
 interface Bus {
   subscribers: Set<Send>;
@@ -26,8 +26,10 @@ export function format(event: string, data: unknown, id?: number): string {
   return `${id === undefined ? "" : `id: ${id}\n`}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+const encoder = new TextEncoder();
+
 export function broadcast(event: string, data: unknown, id?: number): void {
-  const chunk = format(event, data, id);
+  const chunk = encoder.encode(format(event, data, id));
   for (const send of bus.subscribers) send(chunk);
 }
 
@@ -36,7 +38,8 @@ export function subscribe(send: Send): (() => void) | null {
   bus.subscribers.add(send);
   if (!bus.heartbeat) {
     bus.heartbeat = setInterval(() => {
-      for (const s of bus.subscribers) s(": heartbeat\n\n");
+      const beat = encoder.encode(": heartbeat\n\n");
+      for (const s of bus.subscribers) s(beat);
     }, HEARTBEAT_MS);
     bus.heartbeat.unref();
   }

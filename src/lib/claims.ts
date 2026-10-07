@@ -142,7 +142,9 @@ export function addWet(
   const room = MAX_WET_POINTS * 2 - stroke.pts.length;
   const accepted = fresh.slice(0, Math.max(0, room));
   stroke.pts.push(...accepted);
-  arm(claim);
+  // Only real ink keeps a claim alive: an empty post (or one past the
+  // point cap) mustn't let a visitor hold a strip forever.
+  if (accepted.length > 0) arm(claim);
   if (accepted.length > 0) {
     broadcast("wet", {
       strip: claim.strip,

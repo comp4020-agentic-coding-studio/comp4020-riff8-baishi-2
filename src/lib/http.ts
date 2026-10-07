@@ -18,8 +18,13 @@ export async function readBody(
   request: Request,
   maxBytes: number,
 ): Promise<Record<string, unknown> | Response> {
-  const raw = await request.text();
-  if (raw.length > maxBytes) return text("request body too large", 413);
+  // Refuse on the declared size before reading, then hold to it on the
+  // actual bytes.
+  if (Number(request.headers.get("content-length") ?? 0) > maxBytes)
+    return text("request body too large", 413);
+  const bytes = await request.arrayBuffer();
+  if (bytes.byteLength > maxBytes) return text("request body too large", 413);
+  const raw = new TextDecoder().decode(bytes);
   try {
     const body: unknown = JSON.parse(raw);
     if (typeof body === "object" && body !== null && !Array.isArray(body))

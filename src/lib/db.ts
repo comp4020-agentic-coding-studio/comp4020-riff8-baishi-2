@@ -85,8 +85,15 @@ export function getMarks(sinceId = 0): Mark[] {
   return (selectStmt.all(sinceId) as Row[]).map(toMark);
 }
 
+const stripsStmt = db.prepare(`
+  SELECT CASE WHEN strip IS NULL THEN ROW_NUMBER() OVER (ORDER BY id) - 1 ELSE strip END AS strip
+  FROM strokes
+`);
+
+// Just the strips, without parsing every mark's strokes: this runs on every
+// claim and publish.
 export function savedStrips(): Set<number> {
-  return new Set(getMarks().map((m) => m.strip));
+  return new Set((stripsStmt.all() as { strip: number }[]).map((r) => r.strip));
 }
 
 // A bare "M x y" has no paintable geometry in SVG — a browser silently

@@ -2,7 +2,10 @@ import type { APIRoute } from "astro";
 import { snapshot } from "../../lib/claims";
 import { countMarks, getMarks } from "../../lib/db";
 import { format, subscribe } from "../../lib/live";
-import { text } from "../../lib/http";
+
+// How far (in bytes) a viewer may fall behind before it's dropped; it
+// reconnects and catches up by Last-Event-ID.
+const MAX_BEHIND = 1024 * 1024;
 
 // The real-time stream: server-sent events, since the traffic is almost all
 // server-to-client and there's one process to fan out from. On every
@@ -16,39 +19,47 @@ export const GET: APIRoute = ({ request, url }) => {
 
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      const send = (chunk: string): void => {
-        try {
-          controller.enqueue(encoder.encode(chunk));
-        } catch {
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      start(controller) {
+        const close = (): void => {
           unsubscribe?.();
+          try {
+            controller.close();
+          } catch {
+            // already closed
+          }
+        };
+        // A viewer that stops reading is dropped rather than buffered
+        // for: its queue would otherwise grow with every broadcast.
+        const send = (chunk: Uint8Array): void => {
+          if ((controller.desiredSize ?? 0) < -MAX_BEHIND) return close();
+          try {
+            controller.enqueue(chunk);
+          } catch {
+            close();
+          }
+        };
+        const sendText = (s: string): void => send(encoder.encode(s));
+        if (request.signal.aborted) return close();
+        unsubscribe = subscribe(send);
+        if (!unsubscribe) {
+          // Full: tell the client to back off for a while, not hammer.
+          sendText("retry: 30000\n\n" + format("full", {}));
+          return close();
         }
-      };
-      unsubscribe = subscribe(send);
-      if (!unsubscribe) {
-        controller.enqueue(encoder.encode(format("full", {})));
-        controller.close();
-        return;
-      }
-      send("retry: 2000\n\n");
-      for (const mark of getMarks(Math.max(0, since))) send(format("mark", mark, mark.id));
-      send(format("hello", { claims: snapshot(), count: countMarks() }));
-      request.signal.addEventListener("abort", () => {
+        sendText("retry: 2000\n\n");
+        for (const mark of getMarks(Math.max(0, since))) sendText(format("mark", mark, mark.id));
+        sendText(format("hello", { claims: snapshot(), count: countMarks() }));
+        request.signal.addEventListener("abort", close);
+      },
+      cancel() {
         unsubscribe?.();
-        try {
-          controller.close();
-        } catch {
-          // already closed
-        }
-      });
+      },
     },
-    cancel() {
-      unsubscribe?.();
-    },
-  });
+    new ByteLengthQueuingStrategy({ highWaterMark: 64 * 1024 }),
+  );
 
-  if (request.signal.aborted) return text("gone", 499);
   return new Response(stream, {
     headers: {
       "content-type": "text/event-stream; charset=utf-8",

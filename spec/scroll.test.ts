@@ -413,6 +413,15 @@ it("never saves a lapsed claim's wet strokes", async () => {
   }
 });
 
+it("doesn't let empty wet ink keep a claim alive", async () => {
+  const c = await claim(1000);
+  await sleep(600);
+  expect((await postJson("/api/wet", { token: c.token, stroke: "e1", width: 6, pts: [] })).status).toBe(200);
+  await sleep(700);
+  // Real ink would have reset the clock; nothing drawn, so the claim lapsed.
+  expect((await publish(c.token, [{ d: dash(c.strip), width: 6 }])).status).toBe(403);
+});
+
 it("never deletes: nothing in the app exposes a way to remove a mark", async () => {
   for (const path of ["/api/strokes", "/api/lift", "/api/claims"]) {
     const res = await fetch(url(path), { method: "DELETE" });

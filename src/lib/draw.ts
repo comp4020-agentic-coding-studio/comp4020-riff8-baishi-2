@@ -37,6 +37,7 @@ interface MyStroke {
   ink: InkId;
   pts: LocalPoint[];
   sent: number; // how many of pts the server has
+  lifted: boolean;
   el: SVGElement;
 }
 
@@ -411,8 +412,9 @@ export function initScroll(root: Document): void {
     if (flushing || !me) return;
     flushing = true;
     try {
-      for (const s of myStrokes) {
+      for (const s of [...myStrokes]) {
         if (!me) break;
+        if (s.lifted) continue;
         const fresh = s.pts.slice(s.sent, s.sent + 100);
         if (fresh.length === 0) continue;
         const x0 = stripStart(me.strip);
@@ -436,6 +438,8 @@ export function initScroll(root: Document): void {
         if (res.ok) {
           s.sent += fresh.length;
           armTimers(((await res.json()) as { idleMs: number }).idleMs);
+          // Lifted while this batch was on its way: lift it there too.
+          if (s.lifted) sendLift(s);
         } else {
           s.sent = s.pts.length; // refused (e.g. too many strokes): don't retry forever
         }
@@ -469,30 +473,34 @@ export function initScroll(root: Document): void {
     );
     el.classList.add("mine");
     mine.appendChild(el);
-    const s: MyStroke = { id, brush, ink, pts: [{ ...p, t: performance.now() }], sent: 0, el };
+    const s: MyStroke = { id, brush, ink, pts: [{ ...p, t: performance.now() }], sent: 0, lifted: false, el };
     myStrokes.push(s);
     redraw(s);
     prompt.classList.add("gone");
     return s;
   };
 
+  const sendLift = (s: MyStroke): void => {
+    if (!me) return;
+    void fetch("/api/lift", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: me.token, stroke: s.id }),
+    }).then(async (res) => {
+      if (res.ok) armTimers(((await res.json()) as { idleMs: number }).idleMs);
+      else if (res.status === 403) lapse();
+    });
+  };
+
+  // A batch already on its way when the stroke is lifted is caught by
+  // flush(), which sends the lift once that batch lands.
   const liftStroke = (s: MyStroke): void => {
+    s.lifted = true;
     myStrokes = myStrokes.filter((m) => m !== s);
     s.el.remove();
     updateButtons();
     say(myStrokes.length === 0 ? "Every stroke lifted. The strip is still yours for now." : strokeCountMessage());
-    if (me && s.sent > 0) {
-      void fetch("/api/lift", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: me.token, stroke: s.id }),
-      }).then(async (res) => {
-        if (res.ok) armTimers(((await res.json()) as { idleMs: number }).idleMs);
-        else if (res.status === 403) lapse();
-      });
-    } else {
-      s.sent = s.pts.length; // never reached the server: nothing to lift there
-    }
+    if (s.sent > 0) sendLift(s);
   };
 
   const eraseAt = (x: number, y: number): void => {
@@ -810,6 +818,12 @@ export function initScroll(root: Document): void {
       count = Math.max(count, hello.count);
       relayout();
       updateLabel();
+    });
+    source.addEventListener("full", () => {
+      // The server is at its limit of open streams: try again later.
+      source?.close();
+      source = null;
+      setTimeout(connect, 30_000);
     });
     source.addEventListener("error", () => {
       // EventSource retries on its own; if the browser gave up, start over.
