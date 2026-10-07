@@ -19,33 +19,21 @@ const body = marked.parse(readmeSource, { async: false }) as string;
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
-    <header>
-      <p class="tagline"><a href="/">&larr; back to the scroll</a></p>
+    <header class="masthead">
+      <p class="back"><a href="/">&larr; back to the scroll</a></p>
     </header>
-    <main class="readme" set:html={body} />
+    <main class="page-paper" set:html={body} />
   </body>
 </html>
 
 <style>
-  .readme {
-    line-height: 1.6;
+  .back {
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
   }
-  .readme :global(h1) {
-    font-size: clamp(1.75rem, 4vw, 2.5rem);
-  }
-  .readme :global(a) {
-    /* --accent alone is 4.30:1 against the page background — under the
-       4.5:1 AA floor, same reason global.css gives .tagline a its own
-       --link color instead. */
-    color: var(--link);
-  }
-  .readme :global(blockquote) {
+  .page-paper :global(blockquote) {
     margin: 1rem 0;
     padding-left: 1rem;
-    border-left: 3px solid var(--accent);
-    /* color, not opacity: opacity would composite the whole subtree as one
-       group and drag a nested link's own --link color down with it, the
-       same trap global.css's .tagline rule was rewritten to avoid. */
-    color: var(--ink-muted);
+    border-left: 3px solid var(--wet);
   }
 </style>
